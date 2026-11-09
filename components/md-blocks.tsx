@@ -27,7 +27,7 @@
  * EXPAND icon (opens the session overlay) when a chat page is mounted.
  */
 
-import { cloneElement, isValidElement, useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { cloneElement, isValidElement, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { CheckIcon, CopyIcon, MaximizeIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -42,6 +42,8 @@ import { MermaidError } from "@/components/mermaid-error";
 import { blurAfterPointerClick } from "@/components/focus-hygiene";
 import { chartSize, useSessionMermaid } from "@/components/session-overlay";
 import { Hint } from "@/components/ui/hint";
+import { KLINE_INLINE_HEIGHT, KlineChartView, KlineError } from "@/components/kline-chart";
+import { parseKline } from "@/components/kline-spec";
 
 // ─── The one affordance: the hover-reveal corner copy ────────────────────────
 
@@ -226,6 +228,56 @@ function MermaidInline({ chart }: { chart: string }) {
 	);
 }
 
+/** A ```kline fence, in the message flow (2026-11-09): the validated chart
+ *  (components/kline-chart.tsx) with the same hover corner as mermaid —
+ *  copy source + expand to the session focus. While the fence is still
+ *  streaming, the quiet skeleton; an invalid spec or a library failure
+ *  shows the error card in place. */
+function KlineInline({ source }: { source: string }) {
+	const incomplete = useIsCodeFenceIncomplete();
+	const overlay = useSessionMermaid();
+	const parsed = useMemo(() => (incomplete ? null : parseKline(source)), [source, incomplete]);
+	const [renderError, setRenderError] = useState<string | null>(null);
+	useEffect(() => setRenderError(null), [source]);
+
+	if (parsed === null) {
+		return (
+			<div data-testid="md-kline" className="my-4 flex justify-center p-4" aria-busy="true">
+				<span className="inline-block size-4 animate-spin rounded-full border border-current border-b-2 text-muted-foreground" />
+			</div>
+		);
+	}
+	if (!parsed.ok) return <KlineError title={parsed.title} problems={parsed.problems} kind="validation" source={source} />;
+	if (renderError !== null) return <KlineError title={parsed.spec.title} problems={[renderError]} kind="render" source={source} />;
+	return (
+		<div data-testid="md-kline" className="group/md relative my-4">
+			{parsed.spec.title && (
+				<p className="mb-1 pr-14 text-xs font-medium tracking-wide text-muted-foreground">{parsed.spec.title}</p>
+			)}
+			<KlineChartView spec={parsed.spec} interactive={false} style={{ height: KLINE_INLINE_HEIGHT }} onRenderError={setRenderError} />
+			<div className="absolute top-0 right-0 z-10 flex items-start gap-0.5">
+				<CopyCorner getText={() => source} label="Copy chart source" />
+				{overlay?.openKline && (
+					<Hint label="Open full-screen" side="bottom">
+						<button
+							type="button"
+							aria-label="Expand chart"
+							data-testid="md-kline-expand"
+							className="flex size-6 items-center justify-center rounded-md text-muted-foreground/70 opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/md:opacity-100"
+							onClick={(e) => {
+								blurAfterPointerClick(e);
+								overlay.openKline?.(source);
+							}}
+						>
+							<MaximizeIcon className="size-3.5" />
+						</button>
+					</Hint>
+				)}
+			</div>
+		</div>
+	);
+}
+
 /** The Streamdown `code` override: inline code passes through with the
  *  house inline classes; block fences split — mermaid renders as the bare
  *  chart above, everything else delegates to streamdown's exported
@@ -251,6 +303,7 @@ export function MarkdownCode(props: ComponentProps<"code"> & ExtraProps) {
 	const source = codeSource(children);
 
 	if (language === "mermaid") return <MermaidInline chart={source} />;
+	if (language === "kline") return <KlineInline source={source} />;
 
 	const startMatch = /startLine=(\d+)/.exec(meta);
 	const startLine = startMatch ? Number.parseInt(startMatch[1]!, 10) : undefined;

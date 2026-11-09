@@ -50,6 +50,7 @@
 		"embla-carousel-react": "^8.6.0",
 		"jose": "^6.2.12",
 		"katex": "0.18.2",
+		"lightweight-charts": "5.2.1",
 		"linkedom": "^0.18.13",
 		"lucide-react": "^1.33.0",
 		"mdast-util-from-markdown": "2.0.3",

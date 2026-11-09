@@ -35,6 +35,10 @@ import { SvgImage } from "@/components/artifacts/svg-image";
 export const SessionMermaidContext = createContext<{
 	openMermaid: (chart: string) => void;
 	openFigure: (svg: string, inverted: boolean) => void;
+	/** The kline block's expand button (2026-11-09): opens the chart's
+	 *  fullscreen focus with the fence source. Optional — providers that
+	 *  omit it simply hide the kline expand button. */
+	openKline?: (source: string) => void;
 } | null>(null);
 
 export function useSessionMermaid() {

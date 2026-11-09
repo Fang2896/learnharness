@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useChatSession } from "@/components/session";
 import { visibleQueuedSteers } from "@/components/session-core";
 import { SetupDialog } from "@/components/setup-dialog";
@@ -51,6 +51,8 @@ import {
 import { PlanBlock, PlanPopup, latestTree } from "@/components/plan-block";
 import { PlanMarginalia, planExists } from "@/components/plan-window";
 import { MermaidOverlay, SessionMermaidContext } from "@/components/session-overlay";
+import { KlineOverlay } from "@/components/kline-chart";
+import { ChatActionsContext } from "@/components/chat-actions";
 import { AbortTurnDialog, type AbortMode } from "@/components/abort-turn-dialog";
 import { ArrowRightIcon, DumbbellIcon, WaypointsIcon } from "lucide-react";
 import type { PlanBlockData } from "@/src/core";
@@ -117,22 +119,9 @@ const GRADIENT_H = 96;
 const COLLAPSE_DIST = 96;
 const EXPAND_DIST = 16;
 
-/**
- * Server-sync channel for artifact renderers: the CENTRAL jobs poll in Chat
- * calls syncFromServer() when a background job settles — the wake turn's
- * steer + response are already persisted by then, so fresh messages replace
- * local state in one pull. sendText feeds the demo error-fix loop.
- * (contracts.ts "THE ASYNC PROTOCOL" §4.)
- */
-export const ChatActionsContext = createContext<{
-	chatId: string;
-	syncFromServer: () => Promise<void>;
-	/** Send a user message into the session (demo error-fix loop, W6). */
-	sendText: (text: string) => void;
-	/** Opens the model setup dialog (BYOK, 2026-09-22): refused job cards
-	 *  deep-link into the same SetupDialog the send interception uses. */
-	openSetup: () => void;
-} | null>(null);
+/** The artifact renderers' server-sync channel — defined in
+ *  components/chat-actions.ts, re-exported here for existing importers. */
+export { ChatActionsContext };
 
 /** The BYOK refusal envelope from the transport's error text: the
  *  DefaultChatTransport throws the 503 body VERBATIM as the error message,
@@ -379,7 +368,8 @@ export function Chat({
 		const onAbort = () => {
 			const target = escAbortTarget({
 				abortAsk: abortAskRef.current !== null,
-				mermaidFocus: mermaidFocusRef.current !== null || figureFocusRef.current !== null,
+				mermaidFocus:
+					mermaidFocusRef.current !== null || figureFocusRef.current !== null || klineFocusRef.current !== null,
 				planOpen: planOpenRef.current,
 				setupOpen: setupOpenRef.current,
 				pending: pendingRef.current !== null,
@@ -898,6 +888,9 @@ export function Chat({
 	// overlay shell as mermaid, but carrying the raw svg + the card's invert
 	// state so the fullscreen view stays faithful to the toggled card.
 	const [figureFocus, setFigureFocus] = useState<{ svg: string; inverted: boolean } | null>(null);
+	// Kline focus (2026-11-09): the kline block's expand button — the fence
+	// source, re-rendered fullscreen with every chart interaction enabled.
+	const [klineFocus, setKlineFocus] = useState<string | null>(null);
 
 	// Overlay mirrors for the layered-Esc gate (owner 2026-10-04): the
 	// lh:kbd-abort-turn handler reads these at EVENT time — declared here
@@ -909,6 +902,9 @@ export function Chat({
 	// document level by the overlay itself); the window chain must stay out.
 	const figureFocusRef = useRef(figureFocus);
 	figureFocusRef.current = figureFocus;
+	// The kline focus rides the same layer (it claims Esc itself, too).
+	const klineFocusRef = useRef(klineFocus);
+	klineFocusRef.current = klineFocus;
 	const planOpenRef = useRef(planOpen);
 	planOpenRef.current = planOpen;
 	const setupOpenRef = useRef(setupOpen);
@@ -1268,6 +1264,7 @@ export function Chat({
 			value={{
 				openMermaid: setMermaidFocus,
 				openFigure: (svg, inverted) => setFigureFocus({ svg, inverted }),
+				openKline: setKlineFocus,
 			}}
 		>
 		<JobsContext.Provider value={jobs}>
@@ -1790,6 +1787,7 @@ export function Chat({
 						onClose={() => setFigureFocus(null)}
 					/>
 				)}
+				{klineFocus !== null && <KlineOverlay source={klineFocus} onClose={() => setKlineFocus(null)} />}
 				{planOpen && <PlanPopup messages={messages} onClose={() => setPlanOpen(false)} />}
 				<AbortTurnDialog mode={abortAsk} onClose={() => setAbortAsk(null)} onConfirm={confirmAbort} busy={busy} />
 				</div>
